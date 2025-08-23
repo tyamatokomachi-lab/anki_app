@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>単語帳PDFジェネレーター</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .preview-image-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            aspect-ratio: 210 / 297;
+            perspective: 1000px;
+        }
+        .preview-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.8s;
+            backface-visibility: hidden;
+            border-radius: 0.5rem;
+        }
+        .preview-image.front {
+            transform: rotateY(0deg);
+        }
+        .preview-image.back {
+            transform: rotateY(180deg);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
+
+    <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-4xl">
+        <h1 class="text-3xl font-bold mb-6 text-center text-gray-800">単語帳PDFジェネレーター</h1>
+        <p class="text-gray-600 mb-6 text-center">
+            Googleスプレッドシートのデータを基に、画像付きの単語帳PDFを生成します。
+        </p>
+
+        <!-- 設定フォーム -->
+        <div class="space-y-4 mb-6">
+            <div>
+                <label for="sheet_name" class="block text-sm font-medium text-gray-700">スプレッドシートのシート名</label>
+                <select id="sheet_name" name="sheet_name" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                    {% for sheet in sheet_names %}
+                        <option value="{{ sheet }}">{{ sheet }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex space-x-4">
+                <div class="flex-1">
+                    <label for="cols" class="block text-sm font-medium text-gray-700">1ページの列数</label>
+                    <input type="number" id="cols" name="cols" value="{{ cols }}" min="1" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2">
+                </div>
+                <div class="flex-1">
+                    <label for="rows" class="block text-sm font-medium text-gray-700">1ページの行数</label>
+                    <input type="number" id="rows" name="rows" value="{{ rows }}" min="1" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2">
+                </div>
+            </div>
+        </div>
+
+        <!-- アクションボタン -->
+        <div class="flex justify-center space-x-4 mb-6">
+            <button id="previewButton" class="w-1/2 flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                <i class="fas fa-eye mr-2"></i> プレビュー
+            </button>
+            <button id="downloadButton" class="w-1/2 flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                <i class="fas fa-download mr-2"></i> PDFダウンロード
+            </button>
+        </div>
+
+        <!-- プレビュー表示エリア -->
+        <div id="loading" class="hidden text-center text-gray-500 mt-4">
+            <i class="fas fa-spinner fa-spin mr-2"></i> プレビューを生成中...
+        </div>
+        <div id="previewArea" class="mt-6 space-y-4"></div>
+        
+        <!-- ダウンロードステータス -->
+        <div id="downloadStatus" class="hidden mt-6 bg-gray-200 p-4 rounded-md">
+            <p id="statusMessage" class="text-gray-700"></p>
+        </div>
+
+        <!-- GCSファイル管理セクション -->
+        <div id="gcsManager" class="mt-8 pt-8 border-t-2 border-gray-300">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800 text-center">GCSファイル管理</h2>
+
+            <!-- ファイルアップロードフォーム -->
+            <form id="uploadForm" class="flex flex-col items-center space-y-4 mb-6">
+                <input type="file" id="fileInput" class="block w-full text-sm text-gray-500
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-full file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-indigo-50 file:text-indigo-700
+                    hover:file:bg-indigo-100
+                ">
+                <button type="submit" class="py-2 px-6 rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                    <i class="fas fa-cloud-upload-alt mr-2"></i> GCSにアップロード
+                </button>
+            </form>
+
+            <!-- ファイル一覧表示 -->
+            <div id="fileListContainer" class="bg-gray-100 p-4 rounded-md">
+                <h3 class="text-lg font-medium text-gray-700 mb-2">アップロード済みファイル</h3>
+                <ul id="fileList" class="divide-y divide-gray-200">
+                    <li class="p-2 text-center text-gray-500">ファイルがありません。</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const previewButton = document.getElementById('previewButton');
+            const downloadButton = document.getElementById('downloadButton');
+            const sheetNameSelect = document.getElementById('sheet_name');
+            const colsInput = document.getElementById('cols');
+            const rowsInput = document.getElementById('rows');
+            const previewArea = document.getElementById('previewArea');
+            const loadingIndicator = document.getElementById('loading');
+            const downloadStatusDiv = document.getElementById('downloadStatus');
+            const statusMessage = document.getElementById('statusMessage');
+
+            // GCS管理要素
+            const uploadForm = document.getElementById('uploadForm');
+            const fileInput = document.getElementById('fileInput');
+            const fileList = document.getElementById('fileList');
+
+            // GCSファイルリストをロードする関数
+            const loadGCSFiles = async () => {
+                fileList.innerHTML = '<li class="p-2 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>ファイル一覧を取得中...</li>';
+                try {
+                    const response = await fetch('/list_gcs_files');
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        fileList.innerHTML = '';
+                        if (data.files.length === 0) {
+                            fileList.innerHTML = '<li class="p-2 text-center text-gray-500">ファイルがありません。</li>';
+                        } else {
+                            data.files.forEach(file => {
+                                const li = document.createElement('li');
+                                li.className = 'flex justify-between items-center p-2 hover:bg-gray-200';
+                                li.innerHTML = `
+                                    <span class="truncate pr-4">${file.name} (${(file.size / 1024).toFixed(2)} KB)</span>
+                                    <button class="delete-btn text-red-500 hover:text-red-700" data-filename="${file.name}">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
+                                `;
+                                fileList.appendChild(li);
+                            });
+                        }
+                    } else {
+                        fileList.innerHTML = `<li class="p-2 text-red-500 text-center">${data.message}</li>`;
+                    }
+                } catch (error) {
+                    console.error('Error listing files:', error);
+                    fileList.innerHTML = '<li class="p-2 text-red-500 text-center">ファイル一覧の取得に失敗しました。</li>';
+                }
+            };
+
+            // ページロード時にファイルリストをロード
+            loadGCSFiles();
+
+            // ファイル削除イベント
+            fileList.addEventListener('click', async (e) => {
+                if (e.target.closest('.delete-btn')) {
+                    const btn = e.target.closest('.delete-btn');
+                    const filename = btn.dataset.filename;
+                    if (confirm(`本当にファイル "${filename}" を削除しますか？`)) {
+                        try {
+                            const response = await fetch('/delete_gcs_file', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ filename })
+                            });
+                            const data = await response.json();
+                            alert(data.message);
+                            if (data.status === 'success') {
+                                loadGCSFiles();
+                            }
+                        } catch (error) {
+                            console.error('Error deleting file:', error);
+                            alert('ファイルの削除に失敗しました。');
+                        }
+                    }
+                }
+            });
+
+            // ファイルアップロードイベント
+            uploadForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const file = fileInput.files[0];
+                if (!file) {
+                    alert('ファイルを選択してください。');
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch('/upload_gcs_file', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await response.json();
+                    alert(data.message);
+                    if (data.status === 'success') {
+                        fileInput.value = '';
+                        loadGCSFiles();
+                    }
+                } catch (error) {
+                    console.error('Error uploading file:', error);
+                    alert('ファイルのアップロードに失敗しました。');
+                }
+            });
+
+            // PDFジェネレーター機能
+            previewButton.addEventListener('click', async () => {
+                const sheetName = sheetNameSelect.value;
+                const cols = colsInput.value;
+                const rows = rowsInput.value;
+                
+                loadingIndicator.classList.remove('hidden');
+                previewArea.innerHTML = '';
+                
+                try {
+                    const response = await fetch(`/preview_pdf_images?sheet_name=${sheetName}&cols=${cols}&rows=${rows}`);
+                    const data = await response.json();
+                    
+                    if (data.status === 'success') {
+                        data.front_images.forEach((imgBase64, index) => {
+                            const container = document.createElement('div');
+                            container.className = 'relative w-full mb-4 cursor-pointer';
+
+                            const frontImg = document.createElement('img');
+                            frontImg.className = 'preview-image front';
+                            frontImg.src = `data:image/png;base64,${imgBase64}`;
+                            
+                            const backImg = document.createElement('img');
+                            backImg.className = 'preview-image back';
+                            backImg.src = `data:image/png;base64,${data.back_images[index]}`;
+
+                            container.appendChild(frontImg);
+                            container.appendChild(backImg);
+
+                            container.addEventListener('click', () => {
+                                const isFlipped = frontImg.style.transform === 'rotateY(180deg)';
+                                frontImg.style.transform = isFlipped ? 'rotateY(0deg)' : 'rotateY(180deg)';
+                                backImg.style.transform = isFlipped ? 'rotateY(0deg)' : 'rotateY(180deg)';
+                            });
+                            previewArea.appendChild(container);
+                        });
+                    } else {
+                        previewArea.innerHTML = `<p class="text-red-500 text-center">${data.message}</p>`;
+                    }
+                } catch (error) {
+                    console.error('Error fetching preview:', error);
+                    previewArea.innerHTML = `<p class="text-red-500 text-center">プレビューの取得中にエラーが発生しました。</p>`;
+                } finally {
+                    loadingIndicator.classList.add('hidden');
+                }
+            });
+
+            downloadButton.addEventListener('click', () => {
+                const sheetName = sheetNameSelect.value;
+                const cols = colsInput.value;
+                const rows = rowsInput.value;
+                
+                downloadStatusDiv.classList.remove('hidden');
+                statusMessage.innerHTML = 'PDFの生成を開始します...';
+
+                const source = new EventSource(`/download_pdfs?sheet_name=${sheetName}&cols=${cols}&rows=${rows}`);
+                
+                source.onmessage = function(event) {
+                    const message = event.data;
+                    if (message.startsWith('ダウンロード準備完了')) {
+                        const uniqueId = message.split('|')[1];
+                        statusMessage.innerHTML = 'ダウンロードの準備ができました！';
+                        const downloadLink = document.createElement('a');
+                        downloadLink.href = `/get_download_zip/${uniqueId}`;
+                        downloadLink.textContent = 'ここをクリックしてダウンロード';
+                        downloadLink.classList.add('text-indigo-600', 'hover:underline', 'ml-2');
+                        statusMessage.appendChild(downloadLink);
+                        source.close();
+                    } else {
+                        statusMessage.innerHTML = message;
+                    }
+                };
+
+                source.onerror = function(error) {
+                    console.error('EventSource failed:', error);
+                    statusMessage.innerHTML = 'エラーが発生しました。もう一度お試しください。';
+                    source.close();
+                };
+            });
+        });
+    </script>
+</body>
+</html>

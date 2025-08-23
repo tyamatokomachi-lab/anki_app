@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ファイル管理 - {{ GCS_BUCKET_NAME }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-lg">
+        <h1 class="text-4xl font-bold mb-6 text-center text-gray-800">GCSファイル管理</h1>
+        <p class="text-gray-600 text-center mb-8">
+            バケット名: <span class="font-mono text-gray-900 bg-gray-200 rounded-md px-2 py-1">{{ GCS_BUCKET_NAME }}</span>
+        </p>
+
+        <!-- Upload Form -->
+        <div class="bg-gray-50 p-6 rounded-lg shadow-inner mb-8">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700">新しいファイルのアップロード</h2>
+            <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" class="space-y-4">
+                <div>
+                    <label for="file" class="block text-sm font-medium text-gray-700">ファイルを選択:</label>
+                    <input type="file" name="file" id="file" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                </div>
+                <button type="submit" class="w-full bg-blue-500 text-white font-semibold py-3 px-6 rounded-md shadow-lg hover:bg-blue-600 transition-colors">
+                    アップロード
+                </button>
+            </form>
+        </div>
+
+        <!-- File List -->
+        <div class="bg-gray-50 p-6 rounded-lg shadow-inner">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700">ファイルリスト</h2>
+            {% if files %}
+                <ul class="space-y-4">
+                    {% for file in files %}
+                    <li class="bg-white p-4 rounded-lg shadow-sm flex items-center justify-between">
+                        <div class="flex-1 min-w-0">
+                            <span class="block font-medium text-gray-900 truncate">{{ file.name }}</span>
+                            <span class="block text-sm text-gray-500">{{ "%.2f" | format(file.size / 1024 / 1024) }} MB</span>
+                        </div>
+                        <form action="{{ url_for('delete_file') }}" method="post" onsubmit="return confirm('本当にこのファイルを削除しますか？');">
+                            <input type="hidden" name="file_name" value="{{ file.name }}">
+                            <button type="submit" class="ml-4 bg-red-500 text-white font-semibold py-2 px-4 rounded-md shadow-lg hover:bg-red-600 transition-colors">
+                                削除
+                            </button>
+                        </form>
+                    </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="text-gray-500 text-center py-4">このバケットにはファイルがありません。</p>
+            {% endif %}
+        </div>
+        
+        <!-- Back to main page -->
+        <div class="mt-8 text-center">
+            <a href="{{ url_for('index') }}" class="inline-block bg-gray-200 text-gray-800 font-semibold py-2 px-6 rounded-md shadow-lg hover:bg-gray-300 transition-colors">
+                メイン画面に戻る
+            </a>
+        </div>
+    </div>
+</body>
+</html>

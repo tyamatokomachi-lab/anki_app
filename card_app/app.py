@@ -1,4 +1,5 @@
 # app.py
+import shutil 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from flask import Flask, request, jsonify, render_template, Response, url_for, send_file
@@ -19,6 +20,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import io
 import requests
 import tempfile
+import sys
 
 # Flaskアプリケーションのインスタンスを生成
 app = Flask(__name__)
@@ -37,7 +39,6 @@ if not os.path.exists('temp'):
 
 # Check and install required packages
 try:
-    # pdf2imageの代わりにPillowをインストール
     subprocess.check_call(['pip', 'install', 'Pillow'])
     print("Successfully installed Pillow.")
 except subprocess.CalledProcessError as e:
@@ -86,22 +87,32 @@ def preview_pdf_images():
                 except Exception as e:
                     print(f"Error downloading image from GCS: {e}")
 
-        # 新しい関数を呼び出す
-        front_images, back_images = generate_pdf_preview_images(records, cols, rows, images_dir)
+        # PDFを生成 (ここを修正)
+        front_pdf_path = os.path.join(tempfile.gettempdir(), f"preview_front_{uuid.uuid4()}.pdf")
+        back_pdf_path = os.path.join(tempfile.gettempdir(), f"preview_back_{uuid.uuid4()}.pdf")
         
-        # Clean up temporary directory
-        for f in glob.glob(os.path.join(images_dir, '*')):
-            os.remove(f)
-        os.rmdir(images_dir)
+        generate_front_and_back_pdfs(records, front_pdf_path, back_pdf_path, cols, rows, images_dir)
         
-        return jsonify({
-            'status': 'success',
-            'front_images': front_images,
-            'back_images': back_images
-        })
+        # 生成したPDFを画像に変換
+        image_paths = generate_pdf_preview_images(front_pdf_path)
+        
+        # 一時PDFを削除
+        if os.path.exists(front_pdf_path):
+            os.remove(front_pdf_path)
+        if os.path.exists(back_pdf_path):
+            os.remove(back_pdf_path)
+
+        # 一時ディレクトリのクリーンアップ
+        shutil.rmtree(images_dir)
+
+        # プレビュー画像を返す
+        if not image_paths:
+            return jsonify({"status": "error", "message": "プレビュー画像の生成に失敗しました。"}), 500
+        
+        return jsonify({"status": "success", "image_path": image_paths[0]})
         
     except Exception as e:
-        print(f"Error generating preview images: {e}")
+        print(f"Error generating preview images: {e}", file=sys.stderr)
         return jsonify({'status': 'error', 'message': f'プレビュー生成中にエラーが発生しました。: {e}'})
 
 @app.route('/download_pdfs')
